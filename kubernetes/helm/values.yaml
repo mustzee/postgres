@@ -1,0 +1,274 @@
+# Bitnami PostgreSQL Helm Chart Values
+# Chart: https://github.com/bitnami/charts/tree/main/bitnami/postgresql
+
+## ========================================
+## 인증 설정
+## ========================================
+auth:
+  # PostgreSQL 관리자 비밀번호
+  postgresPassword: "YourSecurePassword123!"
+
+  # 애플리케이션 데이터베이스 및 사용자
+  database: "myapp"
+  username: "myapp"
+  password: "MyAppPassword123!"
+
+  # 기존 Secret 사용 (권장)
+  # existingSecret: "postgres-secret"
+  # secretKeys:
+  #   adminPasswordKey: "postgres-password"
+  #   userPasswordKey: "user-password"
+  #   replicationPasswordKey: "replication-password"
+
+## ========================================
+## PostgreSQL 설정
+## ========================================
+image:
+  registry: docker.io
+  repository: bitnami/postgresql
+  tag: 16-debian-12
+  pullPolicy: IfNotPresent
+
+## ========================================
+## Primary (Master) 설정
+## ========================================
+primary:
+  # Pod 수 (항상 1)
+  # replicaCount: 1  # 기본값
+
+  # 리소스 제한
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+
+  # 영구 볼륨
+  persistence:
+    enabled: true
+    size: 20Gi
+    # StorageClass (클라우드 환경에 맞게)
+    # storageClass: "gp3"          # AWS EKS
+    # storageClass: "pd-ssd"       # GCP GKE
+    # storageClass: "managed-premium"  # Azure AKS
+    # storageClass: "standard"     # 기본값
+
+  # PostgreSQL 설정 (postgresql.conf)
+  configuration: |
+    # 연결 설정
+    max_connections = 200
+    superuser_reserved_connections = 3
+
+    # 메모리 설정
+    shared_buffers = 512MB
+    effective_cache_size = 1536MB
+    maintenance_work_mem = 128MB
+    work_mem = 8MB
+
+    # WAL 설정
+    wal_level = replica
+    max_wal_senders = 10
+    wal_keep_size = 256MB
+    max_replication_slots = 10
+
+    # 성능 튜닝
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    checkpoint_completion_target = 0.9
+
+    # 로깅
+    log_min_duration_statement = 1000
+    log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+
+    # Autovacuum
+    autovacuum = on
+    autovacuum_max_workers = 3
+
+  # pg_hba.conf 설정
+  pgHbaConfiguration: |
+    local   all             all                                     trust
+    host    all             all             127.0.0.1/32            scram-sha-256
+    host    all             all             0.0.0.0/0               scram-sha-256
+    host    replication     all             0.0.0.0/0               scram-sha-256
+
+  # 초기화 스크립트
+  initdb:
+    scripts:
+      init.sql: |
+        -- 확장 설치
+        CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+        CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+        -- 샘플 테이블
+        CREATE TABLE IF NOT EXISTS health_check (
+          id SERIAL PRIMARY KEY,
+          timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+## ========================================
+## Read Replicas (Slave) 설정
+## ========================================
+readReplicas:
+  # Replica 수 (읽기 부하 분산)
+  replicaCount: 2
+
+  # 리소스 제한
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+
+  # 영구 볼륨
+  persistence:
+    enabled: true
+    size: 20Gi
+    # storageClass: "gp3"
+
+## ========================================
+## 백업 설정
+## ========================================
+backup:
+  enabled: false  # CronJob 백업 활성화
+
+  # 백업 CronJob 설정
+  cronjob:
+    schedule: "0 2 * * *"  # 매일 새벽 2시
+    concurrencyPolicy: Forbid
+    failedJobsHistoryLimit: 3
+    successfulJobsHistoryLimit: 3
+
+  # 백업 저장소 (S3, GCS 등)
+  # s3:
+  #   enabled: true
+  #   bucket: "my-postgres-backups"
+  #   region: "us-east-1"
+
+## ========================================
+## 메트릭 및 모니터링
+## ========================================
+metrics:
+  enabled: true
+
+  # Prometheus ServiceMonitor
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    labels:
+      release: prometheus
+    interval: 30s
+
+  # 메트릭 리소스
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+
+  # postgres_exporter 설정
+  customMetrics:
+    pg_stat_statements: |
+      SELECT
+        sum(calls) as calls,
+        sum(total_exec_time) as total_exec_time
+      FROM pg_stat_statements;
+
+## ========================================
+## PgBouncer (Connection Pooling)
+## ========================================
+pgbouncer:
+  enabled: false
+
+  # 활성화 시 설정
+  # poolMode: transaction  # session, transaction, statement
+  # maxClientConnections: 1000
+  # defaultPoolSize: 25
+  # minPoolSize: 5
+  # reservePoolSize: 10
+
+## ========================================
+## 네트워크 설정
+## ========================================
+service:
+  type: ClusterIP
+  ports:
+    postgresql: 5432
+
+  # LoadBalancer (외부 접근 필요 시)
+  # type: LoadBalancer
+  # loadBalancerIP: ""
+  # annotations:
+  #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+## ========================================
+## 보안 설정
+## ========================================
+networkPolicy:
+  enabled: false
+
+  # 활성화 시 설정
+  # ingress:
+  #   - from:
+  #     - namespaceSelector:
+  #         matchLabels:
+  #           name: app-namespace
+
+podSecurityContext:
+  enabled: true
+  fsGroup: 1001
+
+containerSecurityContext:
+  enabled: true
+  runAsUser: 1001
+  runAsNonRoot: true
+
+## ========================================
+## 고가용성 설정
+## ========================================
+# Pod Anti-Affinity (서로 다른 노드에 배포)
+podAntiAffinityPreset: soft  # soft 또는 hard
+
+# Topology Spread Constraints
+# topologySpreadConstraints:
+#   - maxSkew: 1
+#     topologyKey: topology.kubernetes.io/zone
+#     whenUnsatisfiable: DoNotSchedule
+
+## ========================================
+## Autoscaling (Read Replicas만 해당)
+## ========================================
+# readReplicas:
+#   autoscaling:
+#     enabled: true
+#     minReplicas: 2
+#     maxReplicas: 5
+#     targetCPU: 70
+#     targetMemory: 70
+
+## ========================================
+## Volume Snapshots (백업)
+## ========================================
+volumePermissions:
+  enabled: false
+
+## ========================================
+## 추가 설정
+## ========================================
+# Timezone
+# extraEnv:
+#   - name: TZ
+#     value: "Asia/Seoul"
+
+# 커스텀 라벨
+commonLabels:
+  app: postgres
+  environment: production
+
+# 커스텀 어노테이션
+commonAnnotations: {}

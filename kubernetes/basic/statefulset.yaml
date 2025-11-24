@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: postgres
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres
+  replicas: 1  # 단일 인스턴스 (HA 없음)
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        imagePullPolicy: IfNotPresent
+
+        ports:
+        - containerPort: 5432
+          name: postgres
+          protocol: TCP
+
+        env:
+        # 필수 환경 변수
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+
+        - name: POSTGRES_USER
+          value: "postgres"
+
+        - name: POSTGRES_DB
+          value: "postgres"
+
+        # 데이터 디렉토리
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+
+        # 리소스 제한
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+
+        # 볼륨 마운트
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+
+        - name: postgres-config
+          mountPath: /etc/postgresql/postgresql.conf
+          subPath: postgresql.conf
+
+        - name: postgres-config
+          mountPath: /etc/postgresql/pg_hba.conf
+          subPath: pg_hba.conf
+
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
+
+        # PostgreSQL 설정 파일 적용
+        args:
+          - "-c"
+          - "config_file=/etc/postgresql/postgresql.conf"
+          - "-c"
+          - "hba_file=/etc/postgresql/pg_hba.conf"
+
+        # Health Checks
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U postgres -h 127.0.0.1
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U postgres -h 127.0.0.1
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+      # 보안 설정
+      securityContext:
+        fsGroup: 999  # postgres 그룹
+        runAsUser: 999  # postgres 사용자
+
+      # 볼륨
+      volumes:
+      - name: postgres-config
+        configMap:
+          name: postgres-config
+
+      - name: init-scripts
+        configMap:
+          name: postgres-config
+          items:
+          - key: init-db.sql
+            path: init-db.sql
+
+  # PersistentVolumeClaim 템플릿
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+      labels:
+        app: postgres
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi  # 필요에 따라 조정
+      # storageClassName 지정 (클러스터 환경에 맞게)
+      # storageClassName: standard  # GKE
+      # storageClassName: gp3        # EKS
+      # storageClassName: default    # 기본값
+
+---
+# PodDisruptionBudget (옵션 - 프로덕션 환경)
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pdb
+  namespace: postgres
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres

@@ -1,0 +1,108 @@
+## ========================================
+## CloudNativePG Cluster - 기본 설정
+## ========================================
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-cluster
+  namespace: postgres
+spec:
+  # PostgreSQL 인스턴스 수 (1 Primary + 2 Replicas)
+  instances: 3
+
+  # PostgreSQL 이미지
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+
+  # 스토리지 설정
+  storage:
+    size: 20Gi
+    # storageClass: gp3  # AWS
+    # storageClass: pd-ssd  # GCP
+    # storageClass: managed-premium  # Azure
+
+  # 리소스 제한
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+
+  # 부트스트랩 (초기화)
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      secret:
+        name: app-secret
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS pg_stat_statements
+        - CREATE EXTENSION IF NOT EXISTS pgcrypto
+
+  # PostgreSQL 설정 (postgresql.conf)
+  postgresql:
+    parameters:
+      # 연결 설정
+      max_connections: "200"
+      superuser_reserved_connections: "5"
+
+      # 메모리 설정
+      shared_buffers: "512MB"
+      effective_cache_size: "1536MB"
+      maintenance_work_mem: "128MB"
+      work_mem: "8MB"
+
+      # WAL 설정
+      wal_level: "replica"
+      max_wal_senders: "10"
+      max_replication_slots: "10"
+      wal_keep_size: "512MB"
+
+      # 성능
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      checkpoint_completion_target: "0.9"
+
+      # 로깅
+      log_destination: "csvlog"
+      logging_collector: "on"
+      log_directory: "/var/log/postgresql"
+      log_filename: "postgres-%Y-%m-%d_%H%M%S.log"
+      log_rotation_age: "1d"
+      log_rotation_size: "100MB"
+      log_min_duration_statement: "1000"
+      log_line_prefix: "%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h "
+
+      # Autovacuum
+      autovacuum: "on"
+      autovacuum_max_workers: "3"
+
+    # pg_hba.conf 설정
+    pg_hba:
+      - local all all trust
+      - host all all all scram-sha-256
+      - host replication all all scram-sha-256
+
+  # 모니터링
+  monitoring:
+    enablePodMonitor: true
+
+  # Affinity (서로 다른 노드에 배치)
+  affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+
+---
+## ========================================
+## 애플리케이션 사용자 Secret
+## ========================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secret
+  namespace: postgres
+type: kubernetes.io/basic-auth
+stringData:
+  username: app
+  password: "AppSecurePassword123!"

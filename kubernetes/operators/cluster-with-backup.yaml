@@ -1,0 +1,173 @@
+## ========================================
+## CloudNativePG Cluster - 백업 포함
+## ========================================
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-cluster
+  namespace: postgres
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+
+  storage:
+    size: 20Gi
+    # storageClass: gp3
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      secret:
+        name: app-secret
+
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "512MB"
+      work_mem: "8MB"
+
+  ## ========================================
+  ## 백업 설정 (S3)
+  ## ========================================
+  backup:
+    # S3 백업 저장소
+    barmanObjectStore:
+      # S3 경로
+      destinationPath: s3://my-postgres-backups/postgres-cluster/
+
+      # 엔드포인트 (AWS S3는 생략 가능)
+      # endpointURL: https://s3.amazonaws.com
+
+      # AWS Region
+      s3Credentials:
+        accessKeyId:
+          name: aws-creds
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: aws-creds
+          key: ACCESS_SECRET_KEY
+        region:
+          name: aws-creds
+          key: AWS_REGION
+
+      # WAL 아카이빙
+      wal:
+        compression: gzip
+        maxParallel: 2
+        encryption: AES256
+
+      # 데이터 백업
+      data:
+        compression: gzip
+        jobs: 2
+        encryption: AES256
+
+    # 백업 보관 정책
+    retentionPolicy: "30d"
+
+  # 모니터링
+  monitoring:
+    enablePodMonitor: true
+
+---
+## ========================================
+## AWS Credentials Secret
+## ========================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-creds
+  namespace: postgres
+type: Opaque
+stringData:
+  ACCESS_KEY_ID: "AKIAIOSFODNN7EXAMPLE"
+  ACCESS_SECRET_KEY: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+  AWS_REGION: "us-east-1"
+
+---
+## ========================================
+## Google Cloud Storage (GCS) 백업 예시
+## ========================================
+# apiVersion: postgresql.cnpg.io/v1
+# kind: Cluster
+# metadata:
+#   name: postgres-cluster-gcs
+# spec:
+#   instances: 3
+#   imageName: ghcr.io/cloudnative-pg/postgresql:16
+#
+#   backup:
+#     barmanObjectStore:
+#       destinationPath: gs://my-postgres-backups/postgres-cluster/
+#       googleCredentials:
+#         applicationCredentials:
+#           name: gcs-creds
+#           key: service-account-key.json
+#       wal:
+#         compression: gzip
+#       data:
+#         compression: gzip
+
+---
+## ========================================
+## Azure Blob Storage 백업 예시
+## ========================================
+# apiVersion: postgresql.cnpg.io/v1
+# kind: Cluster
+# metadata:
+#   name: postgres-cluster-azure
+# spec:
+#   instances: 3
+#   imageName: ghcr.io/cloudnative-pg/postgresql:16
+#
+#   backup:
+#     barmanObjectStore:
+#       destinationPath: https://myaccount.blob.core.windows.net/backups/postgres-cluster/
+#       azureCredentials:
+#         storageAccount:
+#           name: azure-creds
+#           key: AZURE_STORAGE_ACCOUNT
+#         storageKey:
+#           name: azure-creds
+#           key: AZURE_STORAGE_KEY
+#       wal:
+#         compression: gzip
+#       data:
+#         compression: gzip
+
+---
+## ========================================
+## MinIO (S3 호환) 백업 예시
+## ========================================
+# apiVersion: postgresql.cnpg.io/v1
+# kind: Cluster
+# metadata:
+#   name: postgres-cluster-minio
+# spec:
+#   instances: 3
+#   imageName: ghcr.io/cloudnative-pg/postgresql:16
+#
+#   backup:
+#     barmanObjectStore:
+#       destinationPath: s3://postgres-backups/postgres-cluster/
+#       endpointURL: http://minio.minio.svc.cluster.local:9000
+#       s3Credentials:
+#         accessKeyId:
+#           name: minio-creds
+#           key: ACCESS_KEY_ID
+#         secretAccessKey:
+#           name: minio-creds
+#           key: ACCESS_SECRET_KEY
+#       wal:
+#         compression: gzip
+#       data:
+#         compression: gzip

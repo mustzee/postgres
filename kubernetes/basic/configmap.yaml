@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: postgres
+data:
+  # PostgreSQL 설정
+  postgresql.conf: |
+    # 연결 설정
+    listen_addresses = '*'
+    max_connections = 100
+
+    # 메모리 설정 (Pod 리소스에 맞게 조정)
+    shared_buffers = 256MB
+    effective_cache_size = 1GB
+    maintenance_work_mem = 64MB
+    work_mem = 4MB
+
+    # WAL 설정
+    wal_level = replica
+    max_wal_senders = 3
+    wal_keep_size = 64MB
+
+    # 로깅
+    log_destination = 'stderr'
+    logging_collector = off
+    log_statement = 'all'
+    log_duration = on
+    log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+
+    # 성능
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+
+    # Autovacuum
+    autovacuum = on
+    autovacuum_max_workers = 3
+
+  pg_hba.conf: |
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+    # "local" is for Unix domain socket connections only
+    local   all             all                                     trust
+    # IPv4 local connections:
+    host    all             all             127.0.0.1/32            scram-sha-256
+    # IPv4 connections from anywhere (Pod network)
+    host    all             all             0.0.0.0/0               scram-sha-256
+    # IPv6 local connections:
+    host    all             all             ::1/128                 scram-sha-256
+    # Replication connections
+    host    replication     all             0.0.0.0/0               scram-sha-256
+
+  # 초기화 스크립트
+  init-db.sql: |
+    -- 샘플 데이터베이스 생성
+    CREATE DATABASE myapp;
+
+    -- 사용자 생성
+    CREATE USER myapp_user WITH PASSWORD 'myapp_password';
+
+    -- 권한 부여
+    GRANT ALL PRIVILEGES ON DATABASE myapp TO myapp_user;
+
+    -- 연결
+    \c myapp
+
+    -- 샘플 테이블
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 샘플 데이터
+    INSERT INTO users (username, email) VALUES
+        ('admin', 'admin@example.com'),
+        ('user1', 'user1@example.com')
+    ON CONFLICT DO NOTHING;

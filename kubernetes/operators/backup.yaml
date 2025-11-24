@@ -1,0 +1,105 @@
+## ========================================
+## 수동 백업 (Manual Backup)
+## ========================================
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: manual-backup
+  namespace: postgres
+spec:
+  cluster:
+    name: postgres-cluster
+
+  # 백업 방법 (온라인 또는 오프라인)
+  method: barmanObjectStore
+
+  # 타겟 (primary 또는 prefer-standby)
+  target: prefer-standby
+
+---
+## ========================================
+## 스케줄 백업 (Scheduled Backup)
+## ========================================
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: daily-backup
+  namespace: postgres
+spec:
+  # Cron 표현식
+  schedule: "0 2 * * *"  # 매일 새벽 2시
+
+  # 백업 보관 설정
+  backupOwnerReference: self
+
+  # Cluster 참조
+  cluster:
+    name: postgres-cluster
+
+  # 백업 방법
+  method: barmanObjectStore
+
+  # 타겟
+  target: prefer-standby
+
+  # Suspend (일시 정지)
+  suspend: false
+
+---
+## ========================================
+## 주간 전체 백업 + 일일 증분 백업
+## ========================================
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: weekly-full-backup
+  namespace: postgres
+spec:
+  schedule: "0 3 * * 0"  # 매주 일요일 새벽 3시
+  cluster:
+    name: postgres-cluster
+  method: barmanObjectStore
+
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: daily-incremental-backup
+  namespace: postgres
+spec:
+  schedule: "0 3 * * 1-6"  # 월-토 새벽 3시
+  cluster:
+    name: postgres-cluster
+  method: barmanObjectStore
+
+---
+## ========================================
+## 시간별 백업 (고빈도)
+## ========================================
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: hourly-backup
+  namespace: postgres
+spec:
+  schedule: "0 * * * *"  # 매 시간 정각
+  cluster:
+    name: postgres-cluster
+  method: barmanObjectStore
+  backupOwnerReference: self
+
+---
+## ========================================
+## 백업 보관 정책 예시
+## ========================================
+# Cluster에서 설정:
+# spec:
+#   backup:
+#     retentionPolicy: "30d"  # 30일
+#     # 또는
+#     retentionPolicy: "7 days 2 weeks 1 month"  # 더 세밀한 설정
+
+## 삭제 정책:
+# - 최근 7일: 모든 백업 보관
+# - 7-30일: 주간 백업만 보관
+# - 30일 이상: 월간 백업만 보관

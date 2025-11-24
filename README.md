@@ -29,6 +29,12 @@
 - [03. 모니터링 자동화](./phase3-advanced/03-monitoring-automation/)
 - [실습 예제](./phase3-advanced/exercises/)
 
+### Kubernetes 배포 (실전)
+- [Kubernetes 개요](./kubernetes/) - **Docker → Kubernetes 전환**
+- [StatefulSet 배포](./kubernetes/basic/) - 기본 학습용
+- [Helm Chart](./kubernetes/helm/) - 프로덕션 빠른 배포
+- [CloudNativePG Operator](./kubernetes/operators/) - ⭐ **강력 추천!**
+
 ## 🚀 빠른 시작
 
 ### 1. PostgreSQL 환경 시작
